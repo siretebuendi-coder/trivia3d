@@ -1,0 +1,13 @@
+ISLA TRIVIA (v2)
+
+Archivos principales
+  index.html  -> portada (crear sala / unirse)
+  host.html   -> pantalla de la tele / ordenador
+  play.html   -> mando que se abre en el móvil
+  questions.js-> banco de preguntas (puedes añadir más copiando una línea)
+  shared.js   -> reglas: casillas bonus, trampas, monstruos, equipos, avatares
+  config.js   -> TUS claves de Supabase (este zip NO lo incluye: no lo toques ni lo sustituyas)
+
+Atajos en la pantalla de la tele
+  Espacio = tirar el dado por el jugador   N = saltar turno   M = sonido
+  F = pantalla completa   1 = cámara automática   2 = cámara libre   3 = vista de toda la isla

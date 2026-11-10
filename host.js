@@ -1,99 +1,441 @@
+// Pantalla principal (tele / ordenador): une el mundo 3D, los personajes, el dado y las reglas.
 import * as THREE from 'three';
-import { connect, curId, members, esc, AV } from './net.js';
-import { Q } from './questions.js';
-const N = 30, code = Math.random().toString(36).slice(2, 6).toUpperCase();
-const BON = [4, 11, 17, 24], TRAP = [7, 14, 21, 27], MON = [9, 19];
-const ty = i => i === N - 1 ? 'e' : BON.includes(i) ? 'b' : TRAP.includes(i) ? 't' : MON.includes(i) ? 'm' : 'n';
-const COL = { n: 0xdddddd, b: 0x2ecc71, t: 0xe74c3c, m: 0x8e44ad, e: 0xf1c40f };
-const P = i => new THREE.Vector3(i * 2.6, 0, Math.sin(i * 0.5) * 5);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const S = { phase: 'lobby', players: {}, teams: [0, 1].map(() => ({ pos: 0, av: 0, blocked: 0, cleared: [] })), turn: 0, idx: [0, 0], dice: 0, q: null, reveal: null, msg: '', winner: null };
-const used = new Set();
-const net = connect(code, m => {
-  if (m.k === 'join') { S.players[m.id] = S.players[m.id] || { name: m.name, team: null }; S.players[m.id].name = m.name; pub(); }
-  else if (m.k === 'pick' && S.players[m.id] && S.phase === 'lobby') { const p = S.players[m.id]; if (m.team != null) p.team = m.team; if (m.av != null && p.team != null) S.teams[p.team].av = m.av; pub(); }
-  else if (m.k === 'roll' && S.phase === 'roll' && m.id === curId(S)) doRoll();
-  else if (m.k === 'answer' && S.phase === 'question' && m.id === curId(S)) answer(m.i);
+import { createWorld, TILES } from './world.js';
+import { Token, Monster } from './chars.js';
+import { createDice } from './dice.js';
+import { createGame } from './game.js';
+import { QUESTIONS, CATS } from './questions.js';
+import { play, unlockAudio, setMuted, isMuted } from './sfx.js';
+import { N, TEAMS, AVATARS, MONSTER, esc } from './shared.js';
+
+const $ = (s) => document.querySelector(s);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function fatal(msg) {
+  const l = $('#loading');
+  l.hidden = false;
+  l.innerHTML = `<div class="logo">Isla Trivia</div><p class="err">${msg}</p>`;
+}
+
+// ---------- arrancar el 3D ----------
+try { await Promise.race([document.fonts.load('700 48px Fredoka'), sleep(1800)]); } catch (e) { /* sin fuente: se usa la del sistema */ }
+let world;
+try {
+  world = createWorld($('#c'));
+} catch (e) {
+  console.error(e);
+  fatal('Este navegador no ha podido iniciar los gráficos 3D (WebGL). Prueba con Chrome o Edge actualizado.');
+  throw e;
+}
+window.addEventListener('resize', () => world.resize());
+
+// ---------- sala ----------
+const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+let code = sessionStorage.getItem('isla-room');
+if (!code) {
+  code = Array.from({ length: 4 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
+  sessionStorage.setItem('isla-room', code);
+}
+const joinUrl = new URL('play.html?c=' + code, location.href).href;
+const joinBase = new URL('play.html', location.href).href.replace(/^https?:\/\//, '');
+
+// ---------- personajes, monstruos y dado ----------
+const tokens = TEAMS.map((t, i) => {
+  const k = new Token(AVATARS[i].id, t.hex);
+  k.group.visible = false;
+  world.add(k.group);
+  k.place(world.tokenSpot(0, i));
+  k.face(Math.atan2(TILES[0].tx, TILES[0].tz));
+  return k;
 });
-const pub = () => { net.send({ k: 'state', s: { ...S, q: S.q && { t: S.q[0], o: S.q[1] } } }); render(); };
-// ---------- 3D ----------
-const sc = new THREE.Scene(); sc.background = new THREE.Color(0x87ceeb);
-const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, .1, 300);
-const ren = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true }); ren.setSize(innerWidth, innerHeight);
-addEventListener('resize', () => { ren.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
-sc.add(new THREE.HemisphereLight(0xffffff, 0x446644, 1.2)); const dl = new THREE.DirectionalLight(0xffffff, 1); dl.position.set(10, 20, 10); sc.add(dl);
-const mesh = (g, c, x = 0, y = 0, z = 0, parent = sc) => { const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: c })); m.position.set(x, y, z); parent.add(m); return m; };
-mesh(new THREE.PlaneGeometry(400, 400), 0x3a7d44).rotation.x = -Math.PI / 2; sc.children.at(-1).position.y = -.2;
-for (let i = 0; i < N; i++) {
-  const p = P(i), k = ty(i);
-  mesh(new THREE.CylinderGeometry(1.1, 1.1, k === 'e' ? .8 : .3, 6), COL[k], p.x, 0, p.z);
-  if (k === 'm') { const g = new THREE.Group(); g.position.set(p.x, 1, p.z); sc.add(g); mesh(new THREE.SphereGeometry(.8), 0xc0392b, 0, 0, 0, g); mesh(new THREE.ConeGeometry(.2, .6), 0xffffff, -.5, .8, 0, g); mesh(new THREE.ConeGeometry(.2, .6), 0xffffff, .5, .8, 0, g); mesh(new THREE.SphereGeometry(.15), 0xffff00, -.3, .2, .7, g); mesh(new THREE.SphereGeometry(.15), 0xffff00, .3, .2, .7, g); }
+const monsters = {};
+const MSIZE = [1.2, 1.25, 1.12];
+MONSTER.forEach((tile, idx) => {
+  const m = new Monster(idx, MSIZE[idx]);
+  const sp = world.monsterSpot(tile);
+  m.group.position.copy(sp.pos);
+  m.group.rotation.y = sp.yaw;
+  world.add(m.group);
+  monsters[tile] = m;
+});
+const dice = createDice();
+
+// ---------- partida ----------
+let used;
+try { used = new Set(JSON.parse(localStorage.getItem('isla-used') || '[]').filter((i) => i < QUESTIONS.length)); } catch (e) { used = new Set(); }
+
+let game;
+let net = { send: () => {}, ready: Promise.resolve() };
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const FLASH = { bonus: '⭐ ¡BONUS!', trap: '💥 ¡TRAMPA!', monster: '👹 ¡MONSTRUO!' };
+function flash(text) {
+  const el = $('#flash');
+  el.textContent = text;
+  el.classList.remove('go');
+  void el.offsetWidth;
+  el.classList.add('go');
 }
-function makeAv(k, c) {
-  const g = new THREE.Group();
-  mesh(new THREE.CylinderGeometry(.35, .45, .9), c, 0, .55, 0, g);
-  k === 0 ? mesh(new THREE.BoxGeometry(.7, .6, .7), 0xbbbbbb, 0, 1.3, 0, g) : mesh(new THREE.SphereGeometry(.38), k === 4 ? 0x55cc55 : 0xffddb0, 0, 1.3, 0, g);
-  if (k === 1) { mesh(new THREE.ConeGeometry(.12, .3), 0xffddb0, -.25, 1.7, 0, g); mesh(new THREE.ConeGeometry(.12, .3), 0xffddb0, .25, 1.7, 0, g); }
-  if (k === 2) mesh(new THREE.ConeGeometry(.4, .8), 0x6a2c91, 0, 1.9, 0, g);
-  if (k === 3) mesh(new THREE.CylinderGeometry(.3, .3, .25), 0xf1c40f, 0, 1.75, 0, g);
-  if (k === 4) { mesh(new THREE.SphereGeometry(.12), 0xffffff, -.2, 1.65, 0, g); mesh(new THREE.SphereGeometry(.12), 0xffffff, .2, 1.65, 0, g); }
-  if (k === 5) mesh(new THREE.ConeGeometry(.1, .5), 0xffffff, 0, 1.85, 0, g);
-  return g;
+function toast(text, ms = 3500) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.classList.remove('show'), ms);
 }
-const tilePos = (i, t) => P(i).add(new THREE.Vector3(0, .2, t ? .7 : -.7));
-const tok = [0, 1].map(t => { const g = new THREE.Group(); g.userData.av = -1; g.position.copy(tilePos(0, t)); sc.add(g); return g; });
-const tw = [], look = new THREE.Vector3(), CC = [0x3498db, 0xe74c3c];
-const hop = t => new Promise(res => tw.push({ t, from: tok[t].position.clone(), to: tilePos(S.teams[t].pos, t), k: 0, res }));
-let last = performance.now();
-(function loop(now) {
-  const dt = (now - last) / 1000; last = now;
-  for (const w of [...tw]) { w.k += dt / .35; const k = Math.min(w.k, 1); tok[w.t].position.lerpVectors(w.from, w.to, k); tok[w.t].position.y += Math.sin(Math.PI * k) * 1.2; if (k >= 1) { tw.splice(tw.indexOf(w), 1); w.res(); } }
-  const a = Math.min(S.teams[S.turn].pos, N - 2), fwd = P(a + 1).sub(P(a)).normalize(), tk = tok[S.turn];
-  cam.position.lerp(tk.position.clone().addScaledVector(fwd, -7).add(new THREE.Vector3(0, 4.5, 0)), .04);
-  look.lerp(tk.position.clone().addScaledVector(fwd, 3), .06); cam.lookAt(look);
-  ren.render(sc, cam); requestAnimationFrame(loop);
-})(last);
-// ---------- Juego ----------
-async function move(t, n, dir = 1) {
+
+const stage = {
+  sleep,
+  async turnStart(t) {
+    tokens.forEach((k, i) => { k.active = i === t; k.faceCam = false; });
+    await sleep(700);
+  },
+  async rollDice(v) {
+    play('dice');
+    document.body.classList.add('rolling');
+    await dice.roll(v);
+    document.body.classList.remove('rolling');
+  },
+  async hop(t, a, b) {
+    play('hop');
+    await tokens[t].hopTo(world.tokenSpot(b, t));
+    world.bump(b);
+  },
+  async monsterRoar(tile) { await monsters[tile].roar(); },
+  async monsterTaunt(tile) { await monsters[tile].taunt(); },
+  async monsterDefeated(tile, all, t) {
+    tokens[t].cheer();
+    await monsters[tile].hurt(all);
+  },
+  cheer(t) { return tokens[t].cheer(); },
+  sad(t) { return tokens[t].sad(); },
+  async win(t) {
+    tokens.forEach((k, i) => { k.faceCam = false; k.active = false; if (i !== t) k.sad(); });
+    tokens[t].dance();
+    world.setMode('win');
+    startConfetti();
+    await sleep(1600);
+    renderOver(game.S);
+  },
+  sfx(name) {
+    play(name);
+    if (FLASH[name]) flash(FLASH[name]);
+  },
+};
+
+game = createGame({
+  questions: QUESTIONS,
+  stage,
+  used,
+  onUsed: (s) => { try { localStorage.setItem('isla-used', JSON.stringify([...s])); } catch (e) { /* ignorar */ } },
+  publish: (S) => {
+    net.send({ k: 'state', s: clone(S) });
+    onState(S);
+  },
+});
+
+// ---------- red (Supabase) ----------
+let netOk = false;
+function netBanner(msg) {
+  const b = $('#netbanner');
+  b.textContent = msg || '';
+  b.hidden = !msg;
+}
+try {
+  const { connect } = await import('./net.js');
+  net = connect(code, (m) => game.handle(m), (status) => {
+    if (status === 'SUBSCRIBED') { netOk = true; netBanner(''); }
+    else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+      netBanner('⚠️ Sin conexión con la sala. Revisa config.js (URL y clave de Supabase) y que Realtime esté activado.');
+    }
+  });
+  net.ready.catch(() => netBanner('⚠️ No se pudo abrir la sala. Revisa config.js (URL y clave de Supabase) y tu conexión.'));
+} catch (e) {
+  console.error(e);
+  netBanner('⚠️ No se pudo conectar con Supabase: ' + (e && e.message ? e.message : e) + ' · Revisa config.js.');
+}
+setInterval(() => {
+  const s = clone(game.S);
+  if (s.phase === 'question') s.remaining = Math.max(0, s.deadline - Date.now());
+  net.send({ k: 'state', s });
+}, 4000);
+
+// ---------- HUD ----------
+const members = (t) => game.members(t);
+const teamName = (t) => 'Equipo ' + TEAMS[t].name;
+const avEmoji = (S, t) => AVATARS[S.teams[t].av].emoji;
+
+let lastQKey = '';
+
+function renderTurn(S) {
+  const el = $('#turn');
+  if (S.phase === 'lobby' || S.phase === 'over') { el.innerHTML = ''; return; }
+  const t = S.turn, p = S.cur && S.players[S.cur];
   const T = S.teams[t];
-  for (let i = 0; i < n; i++) {
-    const nx = Math.max(0, Math.min(N - 1, T.pos + dir)); if (nx === T.pos) break;
-    T.pos = nx; await hop(t);
-    if (nx === N - 1 && dir > 0) return 'win';
-    if (dir > 0 && ty(nx) === 'm' && !T.cleared.includes(nx)) { T.blocked = 1 + Math.random() * 6 | 0; S.msg = `¡Monstruo! Saca un ${T.blocked} para pasar`; pub(); await sleep(2500); return 'stop'; }
+  let msg = S.msg || '';
+  if (S.phase === 'roll' && p) msg = `${esc(p.name)}, ¡tira el dado desde tu móvil!` + (T.need ? ` · El monstruo pide un ${T.need}` : '');
+  if (S.phase === 'rolling') msg = '🎲 Rodando…';
+  if (S.dice && (S.phase === 'moving')) msg = `🎲 ${S.dice} · ${msg}`;
+  el.innerHTML = `<div class="pill" style="--c:${TEAMS[t].color}"><b>${avEmoji(S, t)}</b> ${teamName(t)}${p ? ' · ' + esc(p.name) : ''}${S.streak > 1 ? ` · 🔥 x${S.streak}` : ''}</div><div class="msg card">${msg}</div>`;
+}
+
+function renderBoard(S) {
+  const el = $('#board');
+  if (S.phase === 'lobby') { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = S.active.map((t) => {
+    const T = S.teams[t], pct = Math.round((T.pos / (N - 1)) * 100);
+    return `<div class="row ${t === S.turn && S.phase !== 'over' ? 'on' : ''}" style="--c:${TEAMS[t].color}">
+      <span class="av">${avEmoji(S, t)}</span>
+      <div class="info"><div class="nm">${TEAMS[t].name}${T.need ? ' 👹' : ''}</div><div class="bar"><i style="width:${Math.max(4, pct)}%"></i></div></div>
+      <span class="tn">${T.pos}/${N - 1}</span></div>`;
+  }).join('');
+}
+
+function renderQuestion(S) {
+  const el = $('#qcard');
+  if (!S.q) { el.hidden = true; el.innerHTML = ''; lastQKey = ''; return; }
+  const key = S.q.t + '|' + S.phase;
+  if (key === lastQKey) return;
+  lastQKey = key;
+  const cat = CATS[S.q.cat] || CATS.gen;
+  const secs = Math.max(1, Math.round((S.deadline - Date.now()) / 1000));
+  const opts = S.q.o.map((o, i) => {
+    let cls = '';
+    if (S.reveal != null) cls = i === S.reveal ? 'right' : i === S.picked ? 'wrong' : 'dim';
+    return `<div class="opt c${i} ${cls}"><span class="l">${'ABCD'[i]}</span><span class="tx">${esc(o)}</span></div>`;
+  }).join('');
+  el.innerHTML = `<div class="chip" style="--c:${cat.color}">${cat.emoji} ${cat.name}</div>
+    <div class="qt">${esc(S.q.t)}</div><div class="opts">${opts}</div>
+    ${S.phase === 'question' ? `<div class="timer"><i style="--t:${secs}s"></i></div>` : ''}`;
+  el.hidden = false;
+}
+
+function renderHint(S) {
+  const el = $('#hint');
+  el.textContent = S.phase === 'roll' ? 'Espacio: tirar el dado por el jugador · N: saltar turno' : '';
+}
+
+const tagEls = TEAMS.map((t) => {
+  const d = document.createElement('div');
+  d.className = 'tag';
+  d.style.setProperty('--c', t.color);
+  d.hidden = true;
+  $('#tags').appendChild(d);
+  return d;
+});
+function renderTags(S) {
+  TEAMS.forEach((T, i) => {
+    const occupied = members(i).length > 0;
+    const inGame = S.phase === 'lobby' ? occupied : S.active.includes(i);
+    tagEls[i].dataset.show = inGame ? '1' : '';
+    const name = S.phase !== 'lobby' && i === S.turn && S.cur && S.players[S.cur] ? ' · ' + esc(S.players[S.cur].name) : '';
+    tagEls[i].innerHTML = `${avEmoji(S, i)} ${T.name}${name}`;
+    tagEls[i].classList.toggle('active', S.phase !== 'lobby' && i === S.turn && S.phase !== 'over');
+  });
+}
+
+// --- sala de inicio ---
+let qrDrawn = false;
+async function drawQR() {
+  if (qrDrawn) return;
+  qrDrawn = true;
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm');
+    const qrcode = mod.default || mod;
+    const qr = qrcode(0, 'M');
+    qr.addData(joinUrl);
+    qr.make();
+    const n = qr.getModuleCount(), cell = 8, m = 2;
+    const cv = $('#qr');
+    cv.width = cv.height = (n + m * 2) * cell;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = '#1d1b3a';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) g.fillRect((c + m) * cell, (r + m) * cell, cell, cell);
+    cv.hidden = false;
+  } catch (e) { console.warn('No se pudo dibujar el QR:', e); }
+}
+function renderLobby(S) {
+  const el = $('#lobby');
+  if (S.phase !== 'lobby') { el.hidden = true; return; }
+  el.hidden = false;
+  $('#lobbycode').textContent = code;
+  $('#lobbyurl').textContent = joinBase;
+  const teams = TEAMS.map((T, i) => {
+    const ms = members(i);
+    return `<div class="tc ${ms.length ? 'full' : ''}" style="--c:${T.color}">
+      <div class="th"><span>${avEmoji(S, i)}</span> ${T.name}</div>
+      <div class="pl">${ms.length ? ms.map((id) => `<span class="pc">${esc(S.players[id].name)}</span>`).join('') : '<em>Esperando jugadores…</em>'}</div></div>`;
+  }).join('');
+  $('#lobbyteams').innerHTML = teams;
+  const nTeams = TEAMS.filter((_, i) => members(i).length).length;
+  $('#btnStart').disabled = nTeams < 2;
+  $('#lobbyhint').textContent = nTeams < 2 ? 'Hacen falta al menos 2 equipos con jugadores' : '¡Todo listo!';
+  drawQR();
+}
+
+function renderRoomChip(S) {
+  const el = $('#roomchip');
+  el.hidden = S.phase === 'lobby';
+  el.innerHTML = `📱 <b>${code}</b>`;
+}
+
+function renderOver(S) {
+  const el = $('#over');
+  if (S.phase !== 'over' || S.winner == null) { el.hidden = true; return; }
+  el.hidden = false;
+  const w = S.winner;
+  $('#overtitle').innerHTML = `<span class="big">${avEmoji(S, w)}</span>¡Gana el Equipo ${TEAMS[w].name}!`;
+  $('#over .box').style.setProperty('--c', TEAMS[w].color);
+}
+
+function onState(S) {
+  // fichas
+  TEAMS.forEach((T, i) => {
+    const occupied = members(i).length > 0;
+    tokens[i].group.visible = S.phase === 'lobby' ? occupied : S.active.includes(i);
+    tokens[i].setAvatar(AVATARS[S.teams[i].av].id);
+    if (S.phase === 'lobby') {
+      tokens[i].place(world.tokenSpot(0, i));
+      tokens[i].face(Math.atan2(TILES[0].tx, TILES[0].tz));
+    }
+  });
+  // cara hacia la cámara mientras se responde
+  if (S.phase !== 'lobby') tokens[S.turn].faceCam = S.phase === 'question' || S.phase === 'result';
+  // burbuja de los monstruos
+  for (const tile of MONSTER) {
+    const T = S.teams[S.turn];
+    const show = S.phase !== 'lobby' && S.phase !== 'over' && T.pos === tile && T.need && S.phase !== 'moving';
+    monsters[tile].setNeed(show ? T.need : 0);
+  }
+  renderLobby(S);
+  renderRoomChip(S);
+  renderTurn(S);
+  renderBoard(S);
+  renderQuestion(S);
+  renderHint(S);
+  renderTags(S);
+  if (S.phase !== 'over') $('#over').hidden = true;
+}
+
+// ---------- botones ----------
+$('#btnStart').onclick = () => { unlockAudio(); play('pop'); startGame(false); };
+$('#btnSolo').onclick = () => { unlockAudio(); startGame(true); };
+function startGame(solo) {
+  if (!game.start(solo)) { toast('Hacen falta al menos 2 equipos con jugadores'); return; }
+  $('#lobby').hidden = true;
+  world.setMode('auto');
+}
+$('#btnAgain').onclick = () => {
+  stopConfetti();
+  tokens.forEach((k, i) => { k.stop(); k.active = false; k.place(world.tokenSpot(0, i)); k.face(Math.atan2(TILES[0].tx, TILES[0].tz)); });
+  Object.values(monsters).forEach((m) => m.reset());
+  game.reset();
+  world.setMode('lobby');
+};
+$('#btnView').onclick = () => { $('#over').hidden = true; };
+
+document.querySelectorAll('[data-cam]').forEach((b) => {
+  b.onclick = () => { unlockAudio(); camMode(b.dataset.cam); };
+});
+function camMode(m) {
+  if (game.S.phase === 'lobby') return;
+  world.setMode(m);
+}
+world.onMode = (m) => {
+  document.querySelectorAll('[data-cam]').forEach((b) => {
+    const on = b.dataset.cam === m || (b.dataset.cam === 'overview' && m === 'free');
+    b.classList.toggle('on', on);
+  });
+  if (m === 'follow') toast('Cámara libre: arrastra para girar, rueda para acercar. 🎬 vuelve al modo automático.');
+};
+const soundBtn = $('#btnSound');
+soundBtn.onclick = () => { unlockAudio(); setMuted(!isMuted()); soundBtn.textContent = isMuted() ? '🔇' : '🔊'; };
+$('#btnFull').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+};
+addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', (e) => {
+  unlockAudio();
+  if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); game.handle({ k: 'hostroll' }); }
+  else if (k === 'n') game.handle({ k: 'skip' });
+  else if (k === 'm') soundBtn.click();
+  else if (k === 'f') $('#btnFull').click();
+  else if (k === '1') camMode('auto');
+  else if (k === '2') camMode('follow');
+  else if (k === '3') camMode('overview');
+});
+
+// ---------- confeti ----------
+const cf = $('#confetti');
+const cg = cf.getContext('2d');
+let parts = [], cfOn = false;
+function startConfetti() {
+  cfOn = true;
+  cf.width = innerWidth;
+  cf.height = innerHeight;
+  const colors = ['#ff6b57', '#ffc933', '#5fcf5a', '#3fa9ff', '#a678ff', '#ff8fb1'];
+  parts = Array.from({ length: 160 }, () => ({
+    x: Math.random() * cf.width, y: -Math.random() * cf.height, w: 8 + Math.random() * 8, h: 5 + Math.random() * 8,
+    vx: (Math.random() - 0.5) * 2, vy: 2 + Math.random() * 4, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
+    c: colors[Math.floor(Math.random() * colors.length)],
+  }));
+}
+function stopConfetti() { cfOn = false; cg.clearRect(0, 0, cf.width, cf.height); }
+function drawConfetti() {
+  if (!cfOn) return;
+  cg.clearRect(0, 0, cf.width, cf.height);
+  for (const p of parts) {
+    p.x += p.vx; p.y += p.vy; p.r += p.vr;
+    if (p.y > cf.height + 20) { p.y = -20; p.x = Math.random() * cf.width; }
+    cg.save();
+    cg.translate(p.x, p.y);
+    cg.rotate(p.r);
+    cg.fillStyle = p.c;
+    cg.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    cg.restore();
   }
 }
-function next() { S.idx[S.turn]++; S.turn = 1 - S.turn; S.phase = 'roll'; S.q = null; S.reveal = null; S.dice = 0; S.msg = ''; pub(); }
-function win(t) { S.phase = 'over'; S.winner = t; pub(); }
-async function doRoll() {
-  S.phase = 'busy'; const t = S.turn, T = S.teams[t], d = 1 + Math.random() * 6 | 0; S.dice = d;
-  if (T.blocked) {
-    if (d === T.blocked) { T.cleared.push(T.pos); T.blocked = 0; S.msg = '¡Monstruo derrotado! Seguís en el próximo turno'; } else S.msg = `Sacó ${d}. Necesita un ${T.blocked}`;
-    pub(); await sleep(2500); return next();
-  }
-  S.msg = `Sacó un ${d}`; pub();
-  const r = await move(t, d);
-  if (r === 'win') return win(t); if (r === 'stop') return next();
-  let pool = Q.map((_, i) => i).filter(i => !used.has(i)); if (!pool.length) { used.clear(); pool = Q.map((_, i) => i); }
-  const x = pool[Math.random() * pool.length | 0]; used.add(x); S.q = Q[x]; S.phase = 'question'; S.msg = ''; pub();
+
+// ---------- bucle principal ----------
+const clock = new THREE.Clock();
+const tmp = new THREE.Vector3();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  const S = game.S;
+  const tk = tokens[S.turn];
+  const tile = TILES[S.teams[S.turn].pos];
+  world.setFocus(tk.base, tile.tx, tile.tz);
+  tokens.forEach((k) => { k.camPos = world.camera.position; k.update(dt); });
+  Object.values(monsters).forEach((m) => m.update(dt));
+  dice.update(dt);
+  world.update(dt, t);
+  world.renderer.autoClear = true;
+  world.renderer.render(world.scene, world.camera);
+  dice.render(world.renderer);
+  // etiquetas flotantes
+  const W = innerWidth, H = innerHeight;
+  tokens.forEach((k, i) => {
+    const el = tagEls[i];
+    if (!el.dataset.show) { el.hidden = true; return; }
+    tmp.copy(k.group.position);
+    tmp.y += 3.2;
+    tmp.project(world.camera);
+    if (tmp.z > 1 || tmp.z < -1 || Math.abs(tmp.x) > 1.1 || Math.abs(tmp.y) > 1.1) { el.hidden = true; return; }
+    el.hidden = false;
+    el.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * W}px, ${(-tmp.y * 0.5 + 0.5) * H}px) translate(-50%,-100%)`;
+  });
+  drawConfetti();
+  requestAnimationFrame(frame);
 }
-async function answer(i) {
-  S.phase = 'busy'; const t = S.turn, k = ty(S.teams[t].pos), ok = i === S.q[2];
-  S.reveal = S.q[2]; S.msg = ok ? '¡Correcto!' : 'Fallaste'; pub(); await sleep(1800);
-  let r; if (ok) r = await move(t, k === 'b' ? 3 : 1); else if (k === 't') r = await move(t, 3, -1);
-  if (r === 'win') return win(t); next();
-}
-window.start = () => { if ([0, 1].every(t => members(S, t).length)) { S.phase = 'roll'; pub(); } else alert('Cada equipo necesita al menos 1 jugador'); };
-function render() {
-  for (const t of [0, 1]) if (tok[t].userData.av !== S.teams[t].av) { tok[t].clear(); tok[t].add(makeAv(S.teams[t].av, CC[t])); tok[t].userData.av = S.teams[t].av; }
-  const cur = curId(S), nm = cur ? esc(S.players[cur].name) : '', ui = document.getElementById('ui'); let h = '';
-  if (S.phase === 'lobby') h = `<div class="box"><div class="big">Sala ${code}</div><div>Entra en <b>${location.origin}/play.html</b> e introduce el código</div>` +
-    [0, 1].map(t => `<div style="color:${t ? '#ff8a80' : '#80d8ff'}">Equipo ${t + 1} ${AV[S.teams[t].av]}: ${members(S, t).map(([, p]) => esc(p.name)).join(', ')}</div>`).join('') + '<br><button onclick="start()">▶ Empezar</button></div>';
-  else if (S.phase === 'over') h = `<div class="box big">🏆 ¡Gana el Equipo ${S.winner + 1}!</div>`;
-  else {
-    h = `<div class="box">Turno: Equipo ${S.turn + 1} · ${nm} ${S.dice ? ' · 🎲 ' + S.dice : ''}<br>${esc(S.msg)}</div>`;
-    if (S.q) h += `<br><div class="box"><div class="big">${esc(S.q[0])}</div>${S.q[1].map((o, i) => `<span class="o ${S.reveal === i ? 'ok' : ''}">${'ABCD'[i]}) ${esc(o)}</span>`).join('')}</div>`;
-  }
-  ui.innerHTML = h;
-}
-render();
+
+// ---------- listo ----------
+onState(game.S);
+$('#loading').hidden = true;
+$('#hud').hidden = false;
+requestAnimationFrame(frame);
