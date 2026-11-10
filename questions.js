@@ -1,0 +1,27 @@
+// [pregunta, [opciones], índice de la correcta]. Añade las que quieras.
+export const Q = [
+["¿Capital de Australia?",["Sídney","Canberra","Melbourne","Perth"],1],
+["¿Cuál es el océano más grande?",["Atlántico","Índico","Pacífico","Ártico"],2],
+["¿Quién pintó La noche estrellada?",["Monet","Van Gogh","Picasso","Dalí"],1],
+["¿Cuántos huesos tiene un adulto aprox.?",["106","206","306","406"],1],
+["¿Cuál es el planeta más cercano al Sol?",["Venus","Marte","Mercurio","Tierra"],2],
+["¿En qué año llegó el hombre a la Luna?",["1959","1969","1979","1989"],1],
+["¿Quién escribió Don Quijote?",["Lope de Vega","Cervantes","Quevedo","Góngora"],1],
+["¿Cuál es el río más largo de España?",["Ebro","Duero","Tajo","Guadalquivir"],2],
+["¿Símbolo químico del oro?",["Ag","Au","Or","Go"],1],
+["¿Cuántos jugadores hay en un equipo de fútbol en el campo?",["9","10","11","12"],2],
+["¿País con más habitantes (2024)?",["India","EE. UU.","Indonesia","Brasil"],0],
+["¿Qué gas respiramos principalmente?",["Oxígeno","Nitrógeno","CO2","Helio"],1],
+["¿Quién descubrió la penicilina?",["Pasteur","Fleming","Curie","Koch"],1],
+["¿Capital de Canadá?",["Toronto","Vancouver","Ottawa","Montreal"],2],
+["¿Cuál es el animal terrestre más rápido?",["León","Guepardo","Caballo","Leopardo"],1],
+["¿Cuántos continentes se suelen contar?",["5","6","7","8"],2],
+["¿Autor de La Gioconda?",["Miguel Ángel","Rafael","Da Vinci","Botticelli"],2],
+["¿Qué país tiene forma de bota?",["Grecia","Italia","Portugal","Chile"],1],
+["¿Cuál es el metal líquido a temperatura ambiente?",["Plomo","Mercurio","Estaño","Cobre"],1],
+["¿Cuántos lados tiene un hexágono?",["5","6","7","8"],1],
+["¿Idioma más hablado como lengua nativa?",["Inglés","Español","Chino mandarín","Hindi"],2],
+["¿En qué ciudad está la Torre Eiffel?",["Roma","París","Londres","Berlín"],1],
+["¿Quién escribió Romeo y Julieta?",["Dickens","Shakespeare","Wilde","Austen"],1],
+["¿Cuál es el desierto más grande del mundo (cálido)?",["Gobi","Sahara","Kalahari","Atacama"],1]
+];
