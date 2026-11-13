@@ -4,9 +4,11 @@ import { createWorld, TILES } from './world.js';
 import { Token, Monster } from './chars.js';
 import { createDice } from './dice.js';
 import { createGame } from './game.js';
-import { QUESTIONS, CATS } from './questions.js';
+import { QUESTIONS } from './questions.js';
+import { HARD, OPEN, FILMS } from './questions2.js';
+import { TOPICS, GUESS, DRAW } from './party.js';
 import { play, unlockAudio, setMuted, isMuted } from './sfx.js';
-import { N, TEAMS, AVATARS, MONSTER, esc } from './shared.js';
+import { N, TEAMS, AVATARS, MONSTER, CATS, esc } from './shared.js';
 
 const $ = (s) => document.querySelector(s);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -62,7 +64,7 @@ const dice = createDice();
 
 // ---------- partida ----------
 let used;
-try { used = new Set(JSON.parse(localStorage.getItem('isla-used') || '[]').filter((i) => i < QUESTIONS.length)); } catch (e) { used = new Set(); }
+try { used = new Set(JSON.parse(localStorage.getItem('isla-used2') || '[]').filter((k) => typeof k === 'string')); } catch (e) { used = new Set(); }
 
 let game;
 let net = { send: () => {}, ready: Promise.resolve() };
@@ -117,6 +119,7 @@ const stage = {
     await sleep(1600);
     renderOver(game.S);
   },
+  stroke(m) { if (m.k === 'clear') clearDraw(); else drawStroke(m); },
   sfx(name) {
     play(name);
     if (FLASH[name]) flash(FLASH[name]);
@@ -124,10 +127,11 @@ const stage = {
 };
 
 game = createGame({
-  questions: QUESTIONS,
+  bank: { easy: QUESTIONS, hard: HARD, open: OPEN, films: FILMS, topics: TOPICS, guess: GUESS, draw: DRAW },
   stage,
+  secret: (m) => net.send(m),
   used,
-  onUsed: (s) => { try { localStorage.setItem('isla-used', JSON.stringify([...s])); } catch (e) { /* ignorar */ } },
+  onUsed: (s) => { try { localStorage.setItem('isla-used2', JSON.stringify([...s])); } catch (e) { /* ignorar */ } },
   publish: (S) => {
     net.send({ k: 'state', s: clone(S) });
     onState(S);
@@ -143,7 +147,7 @@ function netBanner(msg) {
 }
 try {
   const { connect } = await import('./net.js');
-  net = connect(code, (m) => game.handle(m), (status) => {
+  net = connect(code, (m) => game.handle(m, true), (status) => {
     if (status === 'SUBSCRIBED') { netOk = true; netBanner(''); }
     else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
       netBanner('⚠️ Sin conexión con la sala. Revisa config.js (URL y clave de Supabase) y que Realtime esté activado.');
@@ -158,6 +162,7 @@ setInterval(() => {
   const s = clone(game.S);
   if (s.phase === 'question') s.remaining = Math.max(0, s.deadline - Date.now());
   net.send({ k: 'state', s });
+  if (game.secret) net.send({ k: 'secret', ...game.secret });
 }, 4000);
 
 // ---------- HUD ----------
@@ -173,8 +178,10 @@ function renderTurn(S) {
   const t = S.turn, p = S.cur && S.players[S.cur];
   const T = S.teams[t];
   let msg = S.msg || '';
-  if (S.phase === 'roll' && p) msg = `${esc(p.name)}, ¡tira el dado desde tu móvil!` + (T.need ? ` · El monstruo pide un ${T.need}` : '');
+  if (S.phase === 'roll' && p) msg = `${esc(p.name)}, ¡tira el dado desde tu móvil!` + (T.need ? ` · El monstruo pide del ${T.need} al ${T.nmax}` : '');
   if (S.phase === 'rolling') msg = '🎲 Rodando…';
+  if (S.phase === 'mini') msg = '🎉 ¡Reto de pareja!';
+  if (S.phase === 'judge') msg = '🧐 ¿Han acertado?';
   if (S.dice && (S.phase === 'moving')) msg = `🎲 ${S.dice} · ${msg}`;
   el.innerHTML = `<div class="pill" style="--c:${TEAMS[t].color}"><b>${avEmoji(S, t)}</b> ${teamName(t)}${p ? ' · ' + esc(p.name) : ''}${S.streak > 1 ? ` · 🔥 x${S.streak}` : ''}</div><div class="msg card">${msg}</div>`;
 }
@@ -195,25 +202,127 @@ function renderBoard(S) {
 function renderQuestion(S) {
   const el = $('#qcard');
   if (!S.q) { el.hidden = true; el.innerHTML = ''; lastQKey = ''; return; }
-  const key = S.q.t + '|' + S.phase;
+  const key = S.q.t + '|' + S.q.kind + '|' + S.phase + '|' + (S.ansText || '') + '|' + (S.msg || '');
   if (key === lastQKey) return;
   lastQKey = key;
-  const cat = CATS[S.q.cat] || CATS.gen;
+  const q = S.q;
+  const cat = CATS[q.cat] || CATS.gen;
   const secs = Math.max(1, Math.round((S.deadline - Date.now()) / 1000));
-  const opts = S.q.o.map((o, i) => {
-    let cls = '';
-    if (S.reveal != null) cls = i === S.reveal ? 'right' : i === S.picked ? 'wrong' : 'dim';
-    return `<div class="opt c${i} ${cls}"><span class="l">${'ABCD'[i]}</span><span class="tx">${esc(o)}</span></div>`;
-  }).join('');
-  el.innerHTML = `<div class="chip" style="--c:${cat.color}">${cat.emoji} ${cat.name}</div>
-    <div class="qt">${esc(S.q.t)}</div><div class="opts">${opts}</div>
-    ${S.phase === 'question' ? `<div class="timer"><i style="--t:${secs}s"></i></div>` : ''}`;
+  let inner = `<div class="chip" style="--c:${cat.color}">${cat.emoji} ${cat.name}</div><div class="qt">${esc(q.t)}</div>`;
+  if (q.kind === 'mc') {
+    const opts = q.o.map((o, i) => {
+      let cls = '';
+      if (S.reveal != null) cls = i === S.reveal ? 'right' : i === S.picked ? 'wrong' : 'dim';
+      return `<div class="opt c${i} ${cls}"><span class="l">${'ABCD'[i]}</span><span class="tx">${esc(o)}</span></div>`;
+    }).join('');
+    inner += `<div class="opts">${opts}</div>${S.phase === 'question' ? `<div class="timer"><i style="--t:${secs}s"></i></div>` : ''}`;
+  } else {
+    if (q.kind === 'film') {
+      inner += `<div class="emojis">${esc(q.emojis)}</div>`;
+      if (q.img) inner += `<img class="filmimg" src="${esc(q.img)}" alt="">`;
+      inner += `<div class="hintline">${esc(q.hint || '')}</div>`;
+    }
+    if (S.phase === 'question') {
+      inner += `<div class="say">💬 Pensadlo y decidlo en voz alta</div><div class="timer"><i style="--t:${secs}s"></i></div>
+        <div class="judgebtns"><button class="btn ghost" data-act="reveal">👀 Ver respuesta ya (R)</button></div>`;
+    } else if (S.phase === 'judge') {
+      inner += `<div class="answerbox"><small>Respuesta</small>${esc(S.ansText || '')}</div>
+        <div class="judgebtns"><button class="btn green" data-act="yes">✅ Han acertado (Y)</button><button class="btn red" data-act="no">❌ Han fallado (X)</button></div>`;
+    } else {
+      inner += `<div class="answerbox"><small>Respuesta</small>${esc(S.ansText || '')}</div><div class="say">${esc(S.msg || '')}</div>`;
+    }
+  }
+  el.innerHTML = inner;
   el.hidden = false;
 }
 
+// ---------- minijuegos de pareja ----------
+const dcv = $('#drawcv');
+const dctx = dcv.getContext('2d');
+let lastPt = null, lastMgId = 0, lastMiniKey = '';
+function clearDraw() { dctx.fillStyle = '#fff'; dctx.fillRect(0, 0, dcv.width, dcv.height); lastPt = null; }
+function drawStroke(m) {
+  dctx.strokeStyle = m.c || '#1d1b3a';
+  dctx.lineWidth = Math.max(1, (m.w || 0.01) * dcv.width);
+  dctx.lineCap = 'round';
+  dctx.lineJoin = 'round';
+  let prev = m.s ? null : lastPt;
+  for (const p of m.pts || []) {
+    const x = p[0] * dcv.width, y = p[1] * dcv.height;
+    dctx.beginPath();
+    if (prev) { dctx.moveTo(prev[0], prev[1]); dctx.lineTo(x, y); } else { dctx.moveTo(x, y); dctx.lineTo(x + 0.1, y); }
+    dctx.stroke();
+    prev = [x, y];
+  }
+  lastPt = prev;
+}
+clearDraw();
+
+function renderMini(S) {
+  const el = $('#mini');
+  const mg = S.phase === 'mini' ? S.mg : null;
+  if (!mg) { el.hidden = true; lastMiniKey = ''; return; }
+  el.hidden = false;
+  const nm = (id) => esc((S.players[id] || {}).name || '?');
+  const secs = Math.max(1, Math.round((S.deadline - Date.now()) / 1000));
+  const draw = mg.type === 'draw';
+  $('#drawbox').hidden = !draw;
+  if (draw && mg.id !== lastMgId) { clearDraw(); }
+  lastMgId = mg.id;
+  const key = [mg.id, mg.stage, mg.step, S.msg, JSON.stringify(mg.done || {}), JSON.stringify(mg.reveal || {})].join('|');
+  if (key === lastMiniKey) return;
+  lastMiniKey = key;
+  let head = `<div class="mtitle">${mg.title}</div>`;
+  let body = '', foot = '';
+  if (draw) {
+    if (mg.stage === 'play') {
+      const rt = TEAMS[mg.rteam];
+      head += `<div class="mprompt"><b>${nm(mg.drawer)}</b> dibuja desde su móvil y su pareja lo adivina aquí.<br>
+        <small>🤫 La palabra solo sale en el móvil del equipo <b style="color:${rt.color}">${rt.name}</b>: enseñadsela a quien dibuja, ¡sin que la vea su pareja!</small></div>`;
+      foot = `<div class="timer"><i style="--t:${secs}s"></i></div>
+        <div class="judgebtns"><button class="btn green" data-act="yes">✅ Lo han adivinado (Y)</button><button class="btn red" data-act="no">❌ No (X)</button></div>`;
+    } else {
+      head += `<div class="mprompt">La palabra era: <span class="bigword">${esc(mg.word)}</span></div>`;
+      foot = `<div class="say">${esc(S.msg)}</div>`;
+    }
+  } else {
+    head += `<div class="mprompt">${esc(mg.prompt)}</div>`;
+    const aN = nm(mg.a), bN = mg.shared ? 'su pareja' : nm(mg.b);
+    if (mg.stage === 'play') {
+      let status;
+      if (mg.shared) status = mg.step === 'b' ? `<span class="pc ok">✅ ${aN}</span><span class="pc">⏳ ${bN} (con el mismo móvil)</span>` : `<span class="pc">⏳ ${aN} (que su pareja no mire)</span>`;
+      else status = `<span class="pc ${mg.done.a ? 'ok' : ''}">${mg.done.a ? '✅' : '⏳'} ${aN}</span><span class="pc ${mg.done.b ? 'ok' : ''}">${mg.done.b ? '✅' : '⏳'} ${bN}</span>`;
+      body = `<div class="mopts">${mg.opts.map((o) => `<div class="mopt">${esc(o)}</div>`).join('')}</div><div class="pairrow">${status}</div>`;
+      foot = `<div class="timer"><i style="--t:${secs}s"></i></div>`;
+    } else {
+      const r = mg.reveal || {};
+      body = `<div class="mopts">${mg.opts.map((o, i) => {
+        const who = [r.a === i ? aN : '', r.b === i ? bN : ''].filter(Boolean).join(' + ');
+        return `<div class="mopt ${who ? 'sel' : 'dim'}">${esc(o)}${who ? `<span class="who">${who}</span>` : ''}</div>`;
+      }).join('')}</div>`;
+      foot = `<div class="say ${mg.ok ? 'good' : 'bad'}">${esc(S.msg)}</div>`;
+    }
+  }
+  $('#minihead').innerHTML = head;
+  $('#minibody').innerHTML = body;
+  $('#minifoot').innerHTML = foot;
+}
+
+// botones de la tarjeta de pregunta y del minijuego
+function judge(ok) { unlockAudio(); game.handle({ k: 'hostjudge', ok }); }
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-act]');
+  if (!b) return;
+  unlockAudio();
+  const a = b.dataset.act;
+  if (a === 'yes') judge(true);
+  else if (a === 'no') judge(false);
+  else if (a === 'reveal') game.handle({ k: 'hostreveal' });
+});
+
 function renderHint(S) {
   const el = $('#hint');
-  el.textContent = S.phase === 'roll' ? 'Espacio: tirar el dado por el jugador · N: saltar turno' : '';
+  el.textContent = S.phase === 'roll' ? 'Espacio: tirar el dado por el jugador · N: saltar turno' : (S.phase === 'judge' || (S.phase === 'mini' && S.mg && S.mg.type === 'draw' && S.mg.stage === 'play')) ? 'Y: acertaron · X: fallaron' : '';
 }
 
 const tagEls = TEAMS.map((t) => {
@@ -308,13 +417,14 @@ function onState(S) {
   for (const tile of MONSTER) {
     const T = S.teams[S.turn];
     const show = S.phase !== 'lobby' && S.phase !== 'over' && T.pos === tile && T.need && S.phase !== 'moving';
-    monsters[tile].setNeed(show ? T.need : 0);
+    monsters[tile].setNeed(show ? T.need : 0, show ? T.nmax : 0);
   }
   renderLobby(S);
   renderRoomChip(S);
   renderTurn(S);
   renderBoard(S);
   renderQuestion(S);
+  renderMini(S);
   renderHint(S);
   renderTags(S);
   if (S.phase !== 'over') $('#over').hidden = true;
@@ -364,6 +474,9 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === ' ') { e.preventDefault(); game.handle({ k: 'hostroll' }); }
   else if (k === 'n') game.handle({ k: 'skip' });
+  else if (k === 'y') judge(true);
+  else if (k === 'x') judge(false);
+  else if (k === 'r') game.handle({ k: 'hostreveal' });
   else if (k === 'm') soundBtn.click();
   else if (k === 'f') $('#btnFull').click();
   else if (k === '1') camMode('auto');

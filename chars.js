@@ -524,7 +524,7 @@ function buildDragon() {
 
 const BUILD = [buildBlob, buildCyclops, buildDragon];
 
-function bubbleTexture(n) {
+function bubbleTexture(n, hi) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d');
@@ -549,10 +549,10 @@ function bubbleTexture(n) {
   g.textBaseline = 'middle';
   g.fillStyle = '#1d1b3a';
   g.font = '700 38px Fredoka, system-ui, sans-serif';
-  g.fillText('¡Saca un!', 128, 58);
+  g.fillText(hi ? '¡Saca del…' : '¡Saca un!', 128, 58);
   g.fillStyle = '#e5493a';
-  g.font = '700 112px Fredoka, system-ui, sans-serif';
-  g.fillText(String(n), 128, 133);
+  g.font = (hi ? '700 84px' : '700 112px') + ' Fredoka, system-ui, sans-serif';
+  g.fillText(hi ? n + ' al ' + hi : String(n), 128, 133);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -589,12 +589,13 @@ export class Monster {
     this.group.add(this.stars);
   }
 
-  setNeed(n) {
-    if (n === this.need) return;
+  setNeed(n, hi = 0) {
+    if (n === this.need && hi === this.hi) return;
     this.need = n;
+    this.hi = hi;
     if (!n) { this.sprite.visible = false; return; }
     const old = this.sprite.material.map;
-    this.sprite.material.map = bubbleTexture(n);
+    this.sprite.material.map = bubbleTexture(n, hi);
     this.sprite.material.needsUpdate = true;
     if (old) old.dispose();
     this.sprite.visible = true;

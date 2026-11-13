@@ -1,13 +1,19 @@
-ISLA TRIVIA (v2)
+ISLA TRIVIA (v3)
 
 Archivos principales
-  index.html  -> portada (crear sala / unirse)
-  host.html   -> pantalla de la tele / ordenador
-  play.html   -> mando que se abre en el móvil
-  questions.js-> banco de preguntas (puedes añadir más copiando una línea)
-  shared.js   -> reglas: casillas bonus, trampas, monstruos, equipos, avatares
-  config.js   -> TUS claves de Supabase (este zip NO lo incluye: no lo toques ni lo sustituyas)
+  index.html   -> portada (crear sala / unirse)
+  host.html    -> pantalla de la tele / ordenador
+  play.html    -> mando que se abre en el móvil
+  questions.js -> preguntas fáciles de test
+  questions2.js-> preguntas difíciles de test, de respuesta única y películas con emojis
+  party.js     -> minijuegos de pareja (coincidir, conocerse, palabras para dibujar)
+  shared.js    -> reglas: casillas, bonus, trampas, monstruos, minijuegos, tiempos
+  config.js    -> TUS claves de Supabase (este zip NO lo incluye: no lo toques ni lo sustituyas)
 
 Atajos en la pantalla de la tele
-  Espacio = tirar el dado por el jugador   N = saltar turno   M = sonido
-  F = pantalla completa   1 = cámara automática   2 = cámara libre   3 = vista de toda la isla
+  Espacio = tirar el dado por el jugador   N = saltar turno   M = sonido   F = pantalla completa
+  Y = han acertado   X = han fallado   R = ver la respuesta ya
+  1 = cámara automática   2 = cámara libre   3 = vista de toda la isla
+
+Para poner una imagen en una película: guarda la imagen en una carpeta "img" y añade su ruta
+como cuarto dato de la línea en questions2.js, por ejemplo:  ['🧊👸', 'Frozen', 'Animación · 2013', 'img/frozen.jpg']

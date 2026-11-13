@@ -1,14 +1,23 @@
 // Lógica del juego. No sabe nada de gráficos: solo reglas, turnos y mensajes.
 // La pantalla principal (host.js) le pasa un "stage" con las animaciones.
 
-import { N, tileType, BONUS_STEPS, TRAP_STEPS, QTIME, TEAMS, AVATARS, shuffle } from './shared.js';
+import {
+  N, tileType, BONUS_STEPS, TRAP_STEPS, MINI_STEPS, QTIME, OPEN_TIME, MINI_TIME, DRAW_TIME, TEAMS, AVATARS, shuffle,
+} from './shared.js';
+
+// Mensajes que solo puede mandar la pantalla principal (no los móviles)
+const HOST_ONLY = new Set(['hostroll', 'skip', 'hostjudge', 'hostreveal']);
 
 export function createGame(opts) {
   const {
-    questions,
+    bank,                       // { easy, hard, open, films, topics, guess, draw }
     publish = () => {},
+    secret = () => {},          // mensajes privados (palabra a dibujar)
     rng = Math.random,
     qtime = QTIME,
+    opentime = OPEN_TIME,
+    minitime = MINI_TIME,
+    drawtime = DRAW_TIME,
     used = new Set(),
     onUsed = () => {},
   } = opts;
@@ -26,6 +35,7 @@ export function createGame(opts) {
       cheer: noop,
       sad: noop,
       win: noop,
+      stroke: () => {},
       sfx: () => {},
     },
     opts.stage || {}
@@ -33,14 +43,17 @@ export function createGame(opts) {
 
   let joinSeq = 0;
   let runId = 0;
-  let ans = -1; // índice correcto de la pregunta actual (nunca se envía a los móviles)
+  let mgSeq = 0;
+  let ans = -1;          // índice correcto del test actual (nunca se envía a los móviles)
+  let openAns = '';      // respuesta de las preguntas de respuesta única
+  let curSecret = null;  // { mgid, ids, word }
   const waiters = new Set();
 
   const freshTeams = (prev) =>
-    TEAMS.map((_, i) => ({ pos: 0, av: prev ? prev[i].av : i, defeated: [], need: 0 }));
+    TEAMS.map((_, i) => ({ pos: 0, av: prev ? prev[i].av : i, defeated: [], need: 0, nmax: 0, carry: 0 }));
 
   let S = {
-    phase: 'lobby',
+    phase: 'lobby',     // lobby | roll | rolling | moving | question | judge | mini | result | over
     players: {},
     teams: freshTeams(),
     active: [],
@@ -48,7 +61,9 @@ export function createGame(opts) {
     idx: [0, 0, 0, 0],
     cur: null,
     dice: 0,
-    q: null,
+    q: null,            // pregunta actual { kind:'mc'|'open'|'film', t, cat, o?, emojis?, hint?, img? }
+    ansText: null,      // respuesta mostrada (respuesta única)
+    mg: null,           // minijuego actual
     reveal: null,
     picked: null,
     deadline: 0,
@@ -71,11 +86,12 @@ export function createGame(opts) {
     const m = members(S.turn);
     return m.length ? m[S.idx[S.turn] % m.length] : null;
   };
+  const nameOf = (id) => (S.players[id] ? S.players[id].name : 'Jugador');
 
   function pub() {
     S.seq++;
     S.cur = S.phase === 'lobby' ? null : curId();
-    if (S.phase === 'question') S.remaining = Math.max(0, S.deadline - Date.now());
+    if (S.deadline && (S.phase === 'question' || S.phase === 'mini')) S.remaining = Math.max(0, S.deadline - Date.now());
     publish(S);
   }
 
@@ -91,7 +107,7 @@ export function createGame(opts) {
     }
   }
 
-  // ---------- mensajes de los jugadores ----------
+  // ---------- mensajes ----------
   function waitMsg(pred, ms) {
     return new Promise((res) => {
       const w = { pred, res, t: null };
@@ -117,8 +133,9 @@ export function createGame(opts) {
     }
   }
 
-  function handle(m) {
+  function handle(m, remote = false) {
     if (!m || typeof m !== 'object') return;
+    if (remote && HOST_ONLY.has(m.k)) return;
     switch (m.k) {
       case 'hello':
         return pub();
@@ -143,9 +160,17 @@ export function createGame(opts) {
         fixAvatars();
         return pub();
       }
+      case 'stroke':
+      case 'clear':
+        if (S.phase === 'mini' && S.mg && S.mg.type === 'draw' && S.mg.stage === 'play' && m.id === S.mg.drawer) st.stroke(m);
+        return;
       case 'roll':
       case 'answer':
+      case 'mgpick':
+      case 'mgjudge':
       case 'hostroll':
+      case 'hostjudge':
+      case 'hostreveal':
       case 'skip':
         return dispatch(m);
     }
@@ -163,8 +188,11 @@ export function createGame(opts) {
       await st.hop(t, from, nx);
       if (dir > 0 && nx === N - 1) return 'goal';
       if (dir > 0 && tileType(nx) === 'monster' && !T.defeated.includes(nx)) {
-        T.need = 1 + Math.floor(rng() * 6);
-        S.msg = `¡Un monstruo bloquea el camino! Necesitas sacar un ${T.need}`;
+        // el monstruo pide un rango de 3 números (1-3 o 4-6): 50 % de pasar
+        T.need = rng() < 0.5 ? 1 : 4;
+        T.nmax = T.need + 2;
+        T.carry = n - i - 1; // casillas que te sobraban
+        S.msg = `¡Un monstruo bloquea el camino! Para pasar, saca del ${T.need} al ${T.nmax}`;
         pub();
         st.sfx('monster');
         await st.monsterRoar(nx);
@@ -174,48 +202,219 @@ export function createGame(opts) {
     return 'ok';
   }
 
-  // ---------- pregunta ----------
-  function pickQuestion() {
+  // ---------- elegir contenido sin repetir ----------
+  function pickIdx(prefix, arr) {
     let pool = [];
-    for (let i = 0; i < questions.length; i++) if (!used.has(i)) pool.push(i);
+    for (let i = 0; i < arr.length; i++) if (!used.has(prefix + i)) pool.push(i);
     if (!pool.length) {
-      used.clear();
-      for (let i = 0; i < questions.length; i++) pool.push(i);
+      for (let i = 0; i < arr.length; i++) used.delete(prefix + i);
+      pool = arr.map((_, i) => i);
     }
     const i = pool[Math.floor(rng() * pool.length)];
-    used.add(i);
+    used.add(prefix + i);
     onUsed(used);
-    const [cat, t, right, ...wrong] = questions[i];
-    const o = shuffle([right, ...wrong], rng);
-    ans = o.indexOf(right);
-    return { t, o, cat };
+    return i;
   }
 
+  function pickQuestion() {
+    const r = rng();
+    const hasFilms = bank.films && bank.films.length;
+    if (r < 0.5 || (!bank.open.length && !hasFilms)) {
+      const hard = bank.hard.length && (rng() < 0.85 || !bank.easy.length);
+      const arr = hard ? bank.hard : bank.easy;
+      const row = arr[pickIdx(hard ? 'h' : 'e', arr)];
+      const [cat, t, right, ...wrong] = row;
+      const o = shuffle([right, ...wrong], rng);
+      ans = o.indexOf(right);
+      return { kind: 'mc', t, o, cat };
+    }
+    if (r < 0.8 || !hasFilms) {
+      const [cat, t, a] = bank.open[pickIdx('o', bank.open)];
+      openAns = a;
+      return { kind: 'open', t, cat };
+    }
+    const f = bank.films[pickIdx('f', bank.films)];
+    openAns = f[1];
+    const q = { kind: 'film', t: '¿Qué película es?', cat: 'film', emojis: f[0], hint: f[2] };
+    if (f[3]) q.img = f[3];
+    return q;
+  }
+
+  // ---------- pregunta ----------
   async function ask(t, pid) {
     S.q = pickQuestion();
+    S.ansText = null;
     S.reveal = null;
     S.picked = null;
+    S.mg = null;
     S.phase = 'question';
     S.msg = '';
-    S.deadline = Date.now() + qtime * 1000;
+    const open = S.q.kind !== 'mc';
+    S.deadline = Date.now() + (open ? opentime : qtime) * 1000;
     pub();
-    const m = await waitMsg(
-      (x) => x.k === 'skip' || (x.k === 'answer' && x.id === pid && Number.isInteger(x.i) && x.i >= 0 && x.i < 4),
-      qtime * 1000
-    );
-    if (m && m.k === 'abort') return null;
-    const answered = m && m.k === 'answer';
-    const ok = answered && m.i === ans;
-    S.phase = 'result';
-    S.reveal = ans;
-    S.picked = answered ? m.i : null;
-    S.msg = ok ? '¡Correcto!' : answered ? 'Fallaste' : m ? 'Pregunta saltada' : '¡Se acabó el tiempo!';
+    let ok;
+    if (!open) {
+      const m = await waitMsg(
+        (x) => x.k === 'skip' || (x.k === 'answer' && x.id === pid && Number.isInteger(x.i) && x.i >= 0 && x.i < 4),
+        qtime * 1000
+      );
+      if (m && m.k === 'abort') return null;
+      const answered = m && m.k === 'answer';
+      ok = answered && m.i === ans;
+      S.phase = 'result';
+      S.reveal = ans;
+      S.picked = answered ? m.i : null;
+      S.msg = ok ? '¡Correcto!' : answered ? 'Fallaste' : m ? 'Pregunta saltada' : '¡Se acabó el tiempo!';
+    } else {
+      // Se piensa en voz alta; al acabar el tiempo (o antes, con el botón) sale la respuesta y la pantalla decide.
+      const m = await waitMsg((x) => x.k === 'hostreveal' || x.k === 'skip' || x.k === 'hostjudge', opentime * 1000);
+      if (m && m.k === 'abort') return null;
+      if (m && m.k === 'skip') { S.msg = 'Pregunta saltada'; ok = false; } else {
+        S.phase = 'judge';
+        S.ansText = openAns;
+        S.deadline = 0;
+        S.msg = '';
+        pub();
+        st.sfx('tick');
+        const j = m && m.k === 'hostjudge' ? m : await waitMsg((x) => x.k === 'hostjudge' || x.k === 'skip');
+        if (!j || j.k === 'abort') return null;
+        ok = j.k === 'hostjudge' && !!j.ok;
+        S.msg = ok ? '¡Han acertado!' : j.k === 'skip' ? 'Pregunta saltada' : 'Han fallado';
+      }
+      S.phase = 'result';
+      S.ansText = openAns;
+    }
     pub();
     st.sfx(ok ? 'ok' : 'bad');
     if (ok) st.cheer(t);
     else st.sad(t);
-    await st.sleep(2300);
+    await st.sleep(open ? 2000 : 2300);
     S.q = null;
+    S.ansText = null;
+    return ok;
+  }
+
+  // ---------- minijuegos de pareja ----------
+  // Cada equipo suele tener UN móvil (la pareja lo comparte), pero también vale que cada uno tenga el suyo.
+  // Devuelve true/false, o null si se abortó.
+  async function party(t, pid) {
+    const mem = members(t);
+    const shared = mem.length < 2;               // un solo móvil para los dos
+    const partner = shared ? null : mem[(mem.indexOf(pid) + 1) % mem.length];
+    const rivalTeams = S.active.filter((a) => a !== t && members(a).length);
+    const kinds = ['match', 'differ', 'guess'];
+    if (rivalTeams.length) kinds.push('draw', 'draw');
+    const kind = kinds[Math.floor(rng() * kinds.length)];
+    const mgid = ++mgSeq;
+    S.q = null;
+    S.reveal = null;
+    S.picked = null;
+    S.ansText = null;
+    S.phase = 'mini';
+    S.msg = '';
+
+    if (kind === 'draw') {
+      // La palabra le sale SOLO al móvil de otro equipo (nunca al de la pareja que dibuja y adivina).
+      const word = bank.draw[pickIdx('d', bank.draw)];
+      const rt = rivalTeams[Math.floor(rng() * rivalTeams.length)];
+      const holders = members(rt);
+      S.mg = { id: mgid, type: 'draw', title: '🎨 ¡A dibujar!', drawer: pid, guesser: partner, shared, rteam: rt, holders, stage: 'play' };
+      curSecret = { mgid, ids: holders, word };
+      secret({ k: 'secret', ...curSecret });
+      S.deadline = Date.now() + drawtime * 1000;
+      pub();
+      const m = await waitMsg(
+        (x) => x.k === 'skip' || x.k === 'hostjudge' || (x.k === 'mgjudge' && holders.includes(x.id)),
+        drawtime * 1000
+      );
+      if (m && m.k === 'abort') { curSecret = null; return null; }
+      const ok = !!m && m.k !== 'skip' && !!m.ok;
+      S.deadline = 0;
+      S.mg.stage = 'reveal';
+      S.mg.word = word;
+      S.mg.ok = ok;
+      S.msg = ok ? '¡Lo han adivinado!' : !m ? '¡Se acabó el tiempo!' : 'No lo han adivinado';
+      curSecret = null;
+      secret({ k: 'secret', mgid, ids: [], word: '' });
+      pub();
+      st.sfx(ok ? 'ok' : 'bad');
+      if (ok) st.cheer(t); else st.sad(t);
+      await st.sleep(3200);
+      S.mg = null;
+      return ok;
+    }
+
+    let title, prompt, opts2;
+    if (kind === 'guess') {
+      const [q, o] = bank.guess[pickIdx('g', bank.guess)];
+      title = '💞 ¿Cuánto me conoces?';
+      prompt = q.replace('{A}', nameOf(pid));
+      opts2 = o;
+    } else {
+      const [tema, o] = bank.topics[pickIdx('p', bank.topics)];
+      title = kind === 'match' ? '🤝 ¡Coincidid!' : '🙅 ¡No coincidáis!';
+      prompt = `Elegid en secreto: ${tema.toLowerCase()}`;
+      opts2 = o;
+    }
+    // a = quien responde primero (en "conocerse", quien habla de sí mismo); b = su pareja
+    S.mg = { id: mgid, type: kind, title, prompt, opts: opts2, a: pid, b: partner, shared, step: 'a', done: { a: false, b: false }, stage: 'play' };
+    const total = (shared ? minitime * 2 : minitime) * 1000; // con un solo móvil hace falta tiempo para pasárselo
+    S.deadline = Date.now() + total;
+    pub();
+    const picks = { a: null, b: null };
+    const end = Date.now() + total;
+    let skipped = false;
+    const okPick = (x, who) => x.k === 'mgpick' && x.id === who && Number.isInteger(x.i) && x.i >= 0 && x.i < opts2.length;
+    for (const role of ['a', 'b']) {
+      const who = role === 'a' ? pid : shared ? pid : partner;
+      S.mg.step = role;
+      if (shared) pub();
+      // con dos móviles los dos eligen a la vez; con uno, primero A y luego B
+      if (!shared && role === 'b') break;
+      const left = end - Date.now();
+      if (left <= 0) break;
+      const m = await waitMsg((x) => x.k === 'skip' || okPick(x, who), left);
+      if (!m) break;
+      if (m.k === 'abort') return null;
+      if (m.k === 'skip') { skipped = true; break; }
+      picks[role] = m.i;
+      S.mg.done[role] = true;
+      pub();
+    }
+    if (!shared && !skipped) {
+      // dos móviles: recogemos las dos elecciones en cualquier orden
+      picks.a = null; picks.b = null; S.mg.done = { a: false, b: false };
+      S.mg.step = 'both';
+      pub();
+      while (picks.a == null || picks.b == null) {
+        const left = end - Date.now();
+        if (left <= 0) break;
+        const m = await waitMsg(
+          (x) => x.k === 'skip' || (okPick(x, pid) && picks.a == null) || (okPick(x, partner) && picks.b == null),
+          left
+        );
+        if (!m) break;
+        if (m.k === 'abort') return null;
+        if (m.k === 'skip') { skipped = true; break; }
+        const role = m.id === pid ? 'a' : 'b';
+        picks[role] = m.i;
+        S.mg.done[role] = true;
+        pub();
+      }
+    }
+    const both = picks.a != null && picks.b != null;
+    const same = both && picks.a === picks.b;
+    const ok = !skipped && both && (kind === 'differ' ? !same : same);
+    S.deadline = 0;
+    S.mg.stage = 'reveal';
+    S.mg.reveal = { a: picks.a, b: picks.b };
+    S.mg.ok = ok;
+    S.msg = ok ? (kind === 'differ' ? '¡Distintos! Bien hecho' : '¡Coincidís!') : both ? (kind === 'differ' ? '¡Habéis coincidido!' : 'No coincidís') : '¡Se acabó el tiempo!';
+    pub();
+    st.sfx(ok ? 'ok' : 'bad');
+    if (ok) st.cheer(t); else st.sad(t);
+    await st.sleep(3800);
+    S.mg = null;
     return ok;
   }
 
@@ -229,9 +428,11 @@ export function createGame(opts) {
     S.phase = 'roll';
     S.dice = 0;
     S.q = null;
+    S.mg = null;
+    S.ansText = null;
     S.reveal = null;
     S.picked = null;
-    S.msg = T.need ? `¡El monstruo pide un ${T.need}!` : S.streak ? '¡Tira otra vez!' : 'Tira el dado';
+    S.msg = T.need ? `¡El monstruo pide del ${T.need} al ${T.nmax}!` : S.streak ? '¡Tira otra vez!' : 'Tira el dado';
     pub();
 
     const m = await waitMsg((x) => x.k === 'hostroll' || x.k === 'skip' || (x.k === 'roll' && x.id === pid));
@@ -246,9 +447,10 @@ export function createGame(opts) {
     S.dice = d;
     S.phase = 'moving';
 
+    let r;
     if (T.need) {
-      if (d !== T.need) {
-        S.msg = `Sacó un ${d}... el monstruo quería un ${T.need}`;
+      if (d < T.need || d > T.nmax) {
+        S.msg = `Sacó un ${d}... el monstruo pedía del ${T.need} al ${T.nmax}`;
         pub();
         st.sfx('bad');
         await st.monsterTaunt(T.pos);
@@ -259,19 +461,27 @@ export function createGame(opts) {
       const tile = T.pos;
       T.defeated.push(tile);
       T.need = 0;
-      S.msg = '¡Monstruo derrotado!';
+      T.nmax = 0;
+      const rest = T.carry;
+      T.carry = 0;
+      S.msg = rest ? `¡Monstruo derrotado! Avanzas las ${rest} casillas que te sobraban` : '¡Monstruo derrotado!';
       pub();
       st.sfx('ok');
       const all = S.active.every((a) => S.teams[a].defeated.includes(tile));
       await st.monsterDefeated(tile, all, t);
-      // el mismo dado sirve para seguir avanzando
+      if (dead()) return false;
+      if (!rest) {
+        // Justo en la casilla del monstruo: te quedas ahí y en el próximo turno sigues sin duelo.
+        S.streak = 0;
+        return false;
+      }
+      r = await advance(t, rest);
     } else {
       S.msg = `¡Sacó un ${d}!`;
       pub();
       await st.sleep(450);
+      r = await advance(t, d);
     }
-
-    const r = await advance(t, d);
     if (dead()) return false;
     if (r === 'goal') return win(t);
     if (r === 'monster') {
@@ -280,7 +490,12 @@ export function createGame(opts) {
     }
 
     const k = tileType(T.pos);
-    const ok = await ask(t, pid);
+    let ok = null;
+    if (k === 'party') {
+      ok = await party(t, pid);
+    } else {
+      ok = await ask(t, pid);
+    }
     if (ok === null || dead()) return false;
     if (!ok) {
       if (k === 'trap') {
@@ -295,13 +510,15 @@ export function createGame(opts) {
       return false;
     }
     S.streak++;
-    if (k === 'bonus') {
+    const extra = k === 'bonus' ? BONUS_STEPS : k === 'party' ? MINI_STEPS : 0;
+    if (extra) {
       S.phase = 'moving';
-      S.msg = `¡Casilla bonus! Avanzas ${BONUS_STEPS}`;
+      S.msg = k === 'bonus' ? `¡Casilla bonus! Avanzas ${extra}` : `¡Premio! Avanzáis ${extra} casillas`;
+      S.q = null;
       pub();
       st.sfx('bonus');
       await st.sleep(500);
-      const r2 = await advance(t, BONUS_STEPS);
+      const r2 = await advance(t, extra);
       if (dead()) return false;
       if (r2 === 'goal') return win(t);
     }
@@ -348,9 +565,10 @@ export function createGame(opts) {
     S.active = act;
     S.turn = act[0];
     S.idx = [0, 0, 0, 0];
-    S.teams.forEach((T) => { T.pos = 0; T.defeated = []; T.need = 0; });
+    S.teams.forEach((T) => { T.pos = 0; T.defeated = []; T.need = 0; T.nmax = 0; T.carry = 0; });
     S.winner = null;
     S.streak = 0;
+    S.mg = null;
     S.phase = 'roll';
     runId++;
     abortWaiters();
@@ -366,16 +584,20 @@ export function createGame(opts) {
     S.active = [];
     S.idx = [0, 0, 0, 0];
     S.q = null;
+    S.mg = null;
+    S.ansText = null;
     S.reveal = null;
     S.picked = null;
     S.winner = null;
     S.msg = '';
     S.dice = 0;
+    curSecret = null;
     pub();
   }
 
   return {
     get S() { return S; },
+    get secret() { return curSecret; },
     handle,
     start,
     reset,

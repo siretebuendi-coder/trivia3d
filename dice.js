@@ -48,11 +48,11 @@ const NORMALS = {
 export function createDice() {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
-  camera.position.set(0, 0.6, 8.5);
-  camera.lookAt(0, 0.3, 0);
+  camera.position.set(0, 7.6, 6.2);
+  camera.lookAt(0, -0.1, 0);
   scene.add(new THREE.AmbientLight(0xffffff, 1.2));
   const sun = new THREE.DirectionalLight(0xffffff, 2.0);
-  sun.position.set(3, 6, 6);
+  sun.position.set(3, 8, 4);
   scene.add(sun);
 
   const mats = FACE_VALUES.map((v) => toon(0xffffff, { map: faceTexture(v) }));
@@ -79,13 +79,18 @@ export function createDice() {
     new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })
   );
   shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = -1.0;
+  shadow.position.y = -0.78;
   scene.add(shadow);
 
-  const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.45, -0.5, 0));
   const qFinal = new THREE.Quaternion();
   const qSpin = new THREE.Quaternion();
+  const qYaw = new THREE.Quaternion();
   const axis = new THREE.Vector3(1, 1, 0).normalize();
+  const UP = new THREE.Vector3(0, 1, 0);
+  // Hacia dónde apunta "arriba del dibujo" de cada cara (en BoxGeometry)
+  const TEXUP = {
+    3: [0, 1, 0], 4: [0, 1, 0], 1: [0, 0, -1], 6: [0, 0, 1], 2: [0, 1, 0], 5: [0, 1, 0],
+  };
 
   const S = { state: 'idle', t: 0, dur: 1.9, spin: 0, res: null, hold: 0, scale: 0 };
   die.visible = false;
@@ -95,8 +100,14 @@ export function createDice() {
     return new Promise((res) => {
       if (S.res) S.res();
       const n = NORMALS[value] || NORMALS[1];
-      qFinal.setFromUnitVectors(new THREE.Vector3(n[0], n[1], n[2]), new THREE.Vector3(0, 0, 1));
-      qFinal.premultiply(tilt);
+      // La cara con el número rodará hasta quedar mirando hacia ARRIBA (como en un dado de verdad).
+      qFinal.setFromUnitVectors(new THREE.Vector3(n[0], n[1], n[2]), UP);
+      // giramos el dado sobre sí mismo para que el número se lea derecho desde la cámara
+      const tu = TEXUP[value] || TEXUP[1];
+      const v = new THREE.Vector3(tu[0], tu[1], tu[2]).applyQuaternion(qFinal);
+      const a = Math.atan2(v.x, v.z);
+      qYaw.setFromAxisAngle(UP, Math.PI - a + (Math.random() - 0.5) * 0.7);
+      qFinal.premultiply(qYaw);
       axis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
       if (axis.lengthSq() < 0.01) axis.set(1, 1, 0);
       axis.normalize();
