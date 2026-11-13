@@ -19,7 +19,7 @@ export function terrainH(x, z) {
 }
 
 // ---------- camino en espiral (casillas a la misma distancia unas de otras) ----------
-const TURNS = 2.1, R0 = 26, R1 = 2.6, TH0 = Math.PI / 2;
+const TURNS = 2.9, R0 = 26, R1 = 2.6, TH0 = Math.PI / 2;
 const DENSE = 3600;
 const dX = new Float32Array(DENSE), dZ = new Float32Array(DENSE), dS = new Float32Array(DENSE);
 (function () {
@@ -87,7 +87,7 @@ function canvasTex(w, h, draw, repeat = false) {
 }
 function tileTexture(type, i) {
   return canvasTex(256, 256, (g) => {
-    const bg = { normal: '#fff1cf', bonus: '#8ee593', trap: '#ff8f84', monster: '#c9a8ff', start: '#ffffff', goal: '#ffd84d' }[type];
+    const bg = { normal: '#fff1cf', bonus: '#8ee593', trap: '#ff8f84', monster: '#c9a8ff', party: '#ffb3dc', start: '#ffffff', goal: '#ffd84d' }[type];
     g.fillStyle = bg;
     g.fillRect(0, 0, 256, 256);
     g.strokeStyle = 'rgba(38,36,74,.28)';
@@ -95,11 +95,11 @@ function tileTexture(type, i) {
     g.beginPath(); g.arc(128, 128, 104, 0, Math.PI * 2); g.stroke();
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    const emoji = { bonus: '⭐', trap: '💥', monster: '👹', start: '🏁', goal: '🏆' }[type];
+    const emoji = { bonus: '⭐', trap: '💥', monster: '👹', party: '🎉', start: '🏁', goal: '🏆' }[type];
     if (emoji) {
       g.font = '118px ' + EMOJI;
       g.fillText(emoji, 128, 108);
-      const label = { bonus: '+3', trap: '−3' }[type];
+      const label = { bonus: '+3', trap: '−3', party: 'RETO' }[type];
       if (label) { g.font = '700 54px ' + FONT; g.fillStyle = 'rgba(38,36,74,.8)'; g.fillText(label, 128, 205); }
     } else {
       g.font = '700 112px ' + FONT;
@@ -393,7 +393,7 @@ export function createWorld(canvas) {
   });
 
   // --- casillas ---
-  const BODY = { normal: 0xd9cba6, bonus: 0x3fae52, trap: 0xc94b43, monster: 0x7a4bd6, start: 0xdddddd, goal: 0xe6b422 };
+  const BODY = { normal: 0xd9cba6, bonus: 0x3fae52, trap: 0xc94b43, monster: 0x7a4bd6, party: 0xe0559d, start: 0xdddddd, goal: 0xe6b422 };
   const tileGroups = [];
   const starG = starGeometry();
   for (let i = 0; i < N; i++) {
@@ -423,6 +423,14 @@ export function createWorld(canvas) {
       st.castShadow = true;
       g.add(st);
       anim.push((dt, t) => { st.rotation.y = t * 1.6; st.position.y = 2.3 + Math.sin(t * 2.4 + i) * 0.2; });
+    } else if (type === 'party') {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.17, 8, 18), toon(0xff5fb0));
+      const rh = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.17, 8, 18), OUTLINE);
+      rh.scale.setScalar(1.12);
+      ring.add(rh);
+      ring.castShadow = true;
+      g.add(ring);
+      anim.push((dt, t) => { ring.rotation.y = t * 1.8; ring.rotation.x = Math.sin(t * 1.3 + i) * 0.5; ring.position.y = 2.2 + Math.sin(t * 2.2 + i) * 0.18; });
     } else if (type === 'trap') {
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2 + Math.PI / 8;

@@ -231,3 +231,44 @@ body.phone { background: linear-gradient(#3b9cff, #8fd3ff 55%, #ffe9a8); overflo
 .ph .tm { height: 10px; border-radius: 10px; background: #e4e0d0; overflow: hidden; }
 .ph .tm i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b57, #ffc933 45%, #4ccf86); transform-origin: left; animation: drain var(--t) linear forwards; }
 .ph .err { background: #fff0ee; border: 3px solid var(--coral); color: #8c1d12; padding: 10px; border-radius: 14px; text-align: center; font-weight: 600; }
+
+/* ---------- v3: respuesta única, películas, minijuegos ---------- */
+.btn.red { background: #ff6b6b; color: #fff; box-shadow: 0 5px 0 #b83a3a, 0 10px 18px rgba(0, 0, 0, .25); text-shadow: 0 2px 0 rgba(0, 0, 0, .2); }
+.btn.red:active { box-shadow: 0 1px 0 #b83a3a, 0 4px 8px rgba(0, 0, 0, .25); }
+.emojis { font-size: clamp(3rem, 9vw, 6.5rem); text-align: center; letter-spacing: .12em; line-height: 1.1; margin: 4px 0 6px; }
+.hintline { text-align: center; font-weight: 600; color: var(--ink2); font-size: clamp(1rem, 1.8vw, 1.4rem); }
+.filmimg { display: block; max-height: 32vh; max-width: 100%; margin: 6px auto; border-radius: 14px; box-shadow: var(--shadow); }
+.say { text-align: center; font-weight: 700; font-size: clamp(1.1rem, 2.2vw, 1.8rem); margin: 10px 0 0; }
+.say.good { color: #1d8a4e; } .say.bad { color: #c0392b; }
+.answerbox { margin: 10px auto 0; padding: 12px 18px; text-align: center; background: #e7ffe9; border: 4px solid var(--mint); border-radius: 18px; font-weight: 700; font-size: clamp(1.4rem, 3.4vw, 2.8rem); }
+.answerbox small { display: block; font-size: .9rem; font-weight: 600; color: #1d8a4e; }
+.judgebtns { display: flex; justify-content: center; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+
+#mini { position: absolute; left: 50%; bottom: 3vh; transform: translateX(-50%); width: min(1040px, 94vw); padding: clamp(12px, 2vw, 24px); animation: rise .35s ease-out; max-height: 92vh; overflow: hidden; }
+.mtitle { font-size: clamp(1.4rem, 3vw, 2.4rem); font-weight: 700; color: var(--grape); }
+.mprompt { font-size: clamp(1.1rem, 2.4vw, 2rem); font-weight: 600; margin: 4px 0 10px; line-height: 1.2; }
+.mprompt small { font-size: .6em; color: var(--ink2); }
+.bigword { font-size: clamp(1.8rem, 5vw, 3.4rem); font-weight: 700; color: var(--coral); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
+.mopts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mopt { position: relative; background: #fff; border: 3px solid #e4e0d0; border-radius: 14px; padding: clamp(8px, 1.4vw, 16px) 8px; text-align: center; font-weight: 600; font-size: clamp(.9rem, 1.7vw, 1.4rem); transition: .3s; }
+.mopt.sel { border-color: var(--grape); background: #f1e9ff; transform: scale(1.05); font-weight: 700; }
+.mopt.dim { opacity: .35; }
+.mopt .who { display: block; font-size: .7em; color: var(--grape); margin-top: 2px; }
+.pairrow { display: flex; justify-content: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.pairrow .pc { background: #e4e0d0; color: var(--ink); font-size: 1.1rem; padding: 4px 16px; }
+.pairrow .pc.ok { background: var(--mint); color: #fff; }
+#drawbox { background: #fff; border-radius: 16px; border: 4px solid var(--ink); overflow: hidden; width: min(100%, 62vh * 1.3333); margin: 0 auto; box-shadow: var(--shadow); }
+#drawbox canvas { display: block; width: 100%; height: auto; }
+
+/* móvil */
+.ph .ans.two { grid-template-columns: 1fr 1fr; }
+.ph .ans.two .abtn { justify-content: center; text-align: center; font-size: 1.05rem; padding: 14px 8px; }
+.ph .emojis { font-size: 3.4rem; }
+.ph .btn.red { font-size: 1.1rem; }
+.ph .bigword { font-size: 2.3rem; text-align: center; }
+.ph canvas#pad { width: 100%; height: auto; border-radius: 16px; border: 4px solid var(--ink); background: #fff; touch-action: none; box-shadow: var(--shadow); }
+.ph .colors { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.ph .col { width: 40px; height: 40px; border-radius: 50%; border: 4px solid var(--ink); }
+.ph .tools2 { display: flex; gap: 8px; justify-content: center; }
+.ph .tools2 .btn { font-size: .95rem; padding: .5em 1em; }
+@media (max-width: 700px) { .mopts { grid-template-columns: 1fr 1fr; } }

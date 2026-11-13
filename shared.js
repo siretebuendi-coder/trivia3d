@@ -1,12 +1,17 @@
 // Datos y utilidades compartidas por la pantalla principal, los móviles y la lógica.
 
-export const N = 36;                    // casillas del camino (0 = salida, N-1 = cima)
-export const BONUS = [4, 13, 23, 29];   // aciertas -> avanzas BONUS_STEPS
-export const TRAP = [7, 17, 26, 32];    // fallas -> retrocedes TRAP_STEPS
-export const MONSTER = [10, 20, 30];    // te bloquean hasta sacar su número en el dado
+export const N = 50;                    // casillas del camino (0 = salida, N-1 = cima)
+export const BONUS = [5, 16, 22, 31, 44];   // aciertas -> avanzas BONUS_STEPS
+export const TRAP = [9, 19, 30, 35, 46];    // fallas -> retrocedes TRAP_STEPS
+export const MONSTER = [13, 27, 40];        // te bloquean hasta sacar un número de su rango (3 números = 50%)
+export const PARTY = [4, 8, 14, 18, 24, 29, 33, 37, 42, 47]; // minijuegos de pareja
 export const BONUS_STEPS = 3;
 export const TRAP_STEPS = 3;
-export const QTIME = 25;                // segundos para responder
+export const MINI_STEPS = 2;            // casillas extra al ganar un minijuego
+export const QTIME = 25;                // segundos para responder (test)
+export const OPEN_TIME = 40;            // segundos para pensar (respuesta única)
+export const MINI_TIME = 25;            // segundos en los minijuegos de elegir
+export const DRAW_TIME = 75;            // segundos para dibujar
 
 export function tileType(i) {
   if (i === 0) return 'start';
@@ -14,6 +19,7 @@ export function tileType(i) {
   if (BONUS.includes(i)) return 'bonus';
   if (TRAP.includes(i)) return 'trap';
   if (MONSTER.includes(i)) return 'monster';
+  if (PARTY.includes(i)) return 'party';
   return 'normal';
 }
 
@@ -68,4 +74,5 @@ export const CATS = {
   ent: { name: 'Cine y Música', emoji: '🎬', color: '#e23d8f' },
   nat: { name: 'Naturaleza', emoji: '🦁', color: '#4f9d2b' },
   gen: { name: 'Cultura general', emoji: '💡', color: '#e0a800' },
+  film: { name: 'Adivina la película', emoji: '🎬', color: '#e23d8f' },
 };
