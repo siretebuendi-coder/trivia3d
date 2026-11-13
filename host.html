@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Isla Trivia · Pantalla</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body class="host">
+<canvas id="c"></canvas>
+<canvas id="confetti"></canvas>
+
+<div id="loading">
+  <div class="logo">Isla Trivia</div>
+  <div class="spin"></div>
+  <p id="loadmsg">Preparando la isla…</p>
+</div>
+
+<div id="hud" hidden>
+  <div id="netbanner" hidden></div>
+  <div id="roomchip" hidden></div>
+
+  <div id="tools">
+    <button data-cam="auto" class="on" title="Cámara automática (1)">🎬</button>
+    <button data-cam="follow" title="Cámara libre siguiendo al jugador (2)">🖐️</button>
+    <button data-cam="overview" title="Vista de toda la isla (3)">🏝️</button>
+    <span class="sep"></span>
+    <button id="btnSound" title="Sonido (M)">🔊</button>
+    <button id="btnFull" title="Pantalla completa (F)">⛶</button>
+  </div>
+
+  <div id="turn"></div>
+  <div id="board" hidden></div>
+  <div id="tags"></div>
+  <div id="flash"></div>
+  <div id="qcard" class="card" hidden></div>
+  <div id="mini" class="card" hidden>
+    <div id="minihead"></div>
+    <div id="drawbox" hidden><canvas id="drawcv" width="800" height="600"></canvas></div>
+    <div id="minibody"></div>
+    <div id="minifoot"></div>
+  </div>
+  <div id="hint"></div>
+  <div id="toast"></div>
+
+  <div id="lobby">
+    <div class="lb-left">
+      <div class="logo">Isla<br>Trivia</div>
+      <div class="sub">Escanea el QR o entra en la web con tu móvil</div>
+      <canvas id="qr" hidden></canvas>
+      <div id="lobbyurl"></div>
+      <div class="card codebox"><small>Código de sala</small><div id="lobbycode">····</div></div>
+    </div>
+    <div class="lb-right">
+      <h2>Elige tu equipo desde el móvil</h2>
+      <div id="lobbyteams"></div>
+      <div class="lb-actions">
+        <button class="btn green big" id="btnStart" disabled>▶ ¡Empezar!</button>
+        <span id="lobbyhint"></span>
+        <button id="btnSolo">probar sin móviles</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="over" hidden>
+    <div class="box">
+      <div id="overtitle"></div>
+      <div class="btns">
+        <button class="btn green" id="btnAgain">🔁 Jugar otra vez</button>
+        <button class="btn ghost" id="btnView">🏝️ Ver la isla</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Si en 20 segundos no ha cargado, avisamos (suele ser un problema de internet o del navegador)
+  setTimeout(function () {
+    var l = document.getElementById('loading');
+    if (l && !l.hidden) {
+      var m = document.getElementById('loadmsg'); if (m) m.innerHTML = 'Está tardando más de lo normal… Comprueba tu conexión a internet y pulsa F5. Si sigue igual, pulsa F12 → Consola y mándame lo que salga en rojo.';
+    }
+  }, 20000);
+</script>
+<script type="module" src="host.js"></script>
+</body>
+</html>
