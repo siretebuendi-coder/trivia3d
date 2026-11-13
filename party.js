@@ -46,22 +46,16 @@ export const GUESS = [
   ['¿Qué haría {A} si se queda encerrado/a en un ascensor?', ['Pulsar la alarma', 'Llamar por teléfono', 'Gritar', 'Esperar con calma']],
 ];
 
-// Cosas para dibujar: objetos con algo de dificultad, acciones y escenas sencillas
+// Palabras para dibujar (solo las ven los rivales)
 export const DRAW = [
-  // acciones y escenas
-  'Un niño corriendo', 'Un perro persiguiendo una pelota', 'Alguien durmiendo', 'Una persona bailando', 'Un gato subido a un árbol',
-  'Un pájaro comiendo un gusano', 'Alguien cocinando', 'Un niño montando en bici', 'Un surfista en una ola', 'Un astronauta flotando',
-  'Alguien lavándose los dientes', 'Un pescador pescando', 'Un fantasma asustando a alguien', 'Una persona esquiando', 'Un payaso haciendo malabares',
-  'Un bebé gateando', 'Alguien paseando al perro', 'Un tiburón persiguiendo a un nadador', 'Un mago sacando un conejo del sombrero', 'Dos personas dándose la mano',
-  'Alguien estornudando', 'Un chico jugando al fútbol', 'Una abuela tejiendo', 'Un pirata buscando un tesoro', 'Alguien subiendo una montaña',
-  'Un cocodrilo con la boca abierta', 'Una sirena nadando', 'Un niño soplando las velas', 'Alguien hablando por teléfono', 'Un conductor atascado en un atasco',
-  'Una persona tomando el sol en la playa', 'Un caballo saltando una valla', 'Un robot bailando', 'Un lobo aullando a la luna', 'Alguien leyendo un libro',
-  // cosas y animales con algo más de detalle
-  'Tiburón', 'Pulpo', 'Jirafa', 'Pingüino', 'Camaleón', 'Murciélago', 'Flamenco',
-  'Camión de bomberos', 'Globo aerostático', 'Submarino', 'Faro', 'Molino', 'Noria', 'Montaña rusa',
-  'Torre Eiffel', 'Pirámide', 'Coliseo', 'Estatua de la Libertad', 'Gran Muralla',
-  'Bruja en escoba', 'Dragón', 'Unicornio', 'Zombi', 'Sirena', 'Castillo con puente', 'Tienda de campaña',
-  'Spider-Man', 'Mickey Mouse', 'Shrek', 'Bob Esponja', 'Pikachu', 'Harry Potter', 'Elsa de Frozen', 'Mario Bros',
-  'Reloj de arena', 'Paraguas roto', 'Bicicleta', 'Guitarra eléctrica', 'Cámara de fotos', 'Cohete despegando',
-  'Un bocadillo gigante', 'Una pizza con muchos ingredientes', 'Un helado derritiéndose', 'Una tormenta con rayos', 'Un arcoíris con lluvia',
+  'Tiburón', 'Paraguas', 'Bicicleta', 'Pizza', 'Castillo', 'Torre Eiffel', 'Guitarra', 'Dinosaurio', 'Astronauta', 'Cohete',
+  'Gafas de sol', 'Elefante', 'Helado', 'Mariposa', 'Dragón', 'Pirata', 'Zombi', 'Sirena', 'Robot', 'Volcán',
+  'Camión de bomberos', 'Tobogán', 'Pulpo', 'Gato con botas', 'Muñeco de nieve', 'Árbol de Navidad', 'Corona', 'Faro', 'Submarino', 'Globo aerostático',
+  'Mago', 'Fantasma', 'Cangrejo', 'Jirafa', 'Hamburguesa', 'Palmera', 'Reloj', 'Ordenador', 'Avión', 'Tren',
+  'Pingüino', 'Ballena', 'Tortuga', 'Murciélago', 'Araña', 'Cactus', 'Caravana', 'Tienda de campaña', 'Iglú', 'Molino',
+  'Mochila', 'Cámara de fotos', 'Micrófono', 'Corazón', 'Llave', 'Candado', 'Tijeras', 'Zapatilla', 'Sombrero', 'Bufanda',
+  'Cohete espacial', 'Estrella de mar', 'Cocodrilo', 'Mono', 'Loro', 'Búho', 'Unicornio', 'Hada', 'Esqueleto', 'Calabaza de Halloween',
+  'Patinete', 'Monopatín', 'Portería de fútbol', 'Piscina', 'Noria', 'Montaña rusa', 'Playa', 'Sandía', 'Cerveza', 'Tarta de cumpleaños',
+  'Móvil', 'Auriculares', 'Mando de videojuegos', 'Bruja', 'Espada', 'Escudo', 'Arcoíris', 'Tormenta', 'Luna', 'Sol con gafas',
+  'Spider-Man', 'Cenicienta', 'Bob Esponja', 'Shrek', 'Pikachu', 'Mickey Mouse', 'Harry Potter', 'Elsa', 'Mario Bros', 'Doraemon',
 ];
